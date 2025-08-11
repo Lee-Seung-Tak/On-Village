@@ -11,6 +11,10 @@
 2. Google Drive에서 받은 `certbot` 폴더를 프로젝트 루트 디렉토리에 저장합니다.
 3. Google Drive에서 받은 `setup.sh` 파일을 프로젝트 루트 디렉토리에 저장합니다.
 4. 터미널에서 아래 명령어로 실행 권한을 부여합니다.
+```bash
+chmod +x setup.sh
+./setup.sh
+```
 5. 아래 명령을 통하여 ec2환경에서 sudo 없이 docker를 실행할 수 있게 합니다.
 ```bash
 sudo usermod -aG docker $USER
@@ -20,7 +24,4 @@ sudo usermod -aG docker $USER
 newgrp docker 
 ```
 7. docker-compose up -d 
-```bash
-chmod +x setup.sh
-./setup.sh
-```
+
