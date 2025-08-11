@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # api-server:
+  #   build:
+  #     context: ./api_server  
+  #     dockerfile: Dockerfile  
+  #   ports:
+  #     - "8008:8000" # 집에 포트포워딩한 포트가 많아서 부득이하게 8008로 선언언
+  #   environment:
+  #     - ENV=production
+  #   volumes:
+  #     - ./api_server:/app  
+  #   restart: always
+  #   container_name: api-svr
+
+  nginx:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/nginx.conf:ro
+      - ./certbot/conf:/etc/letsencrypt  
+      - ./certbot/www:/var/www/certbot  # 인증서 갱신을 위한 웹 루트
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    container_name: nginx
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt  
+      - ./certbot/www:/var/www/certbot  # 인증서 갱신을 위한 웹 루트
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    depends_on:
+      - nginx
+    restart: always

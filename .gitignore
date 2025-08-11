@@ -135,6 +135,8 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+certbot/
+nginx/
 .env
 .envrc
 .venv
