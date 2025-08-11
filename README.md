@@ -8,6 +8,10 @@
 ## Project 실행 방법
 
 1. Google Drive에서 받은 `nginx` 폴더를 프로젝트 루트 디렉토리에 저장합니다.
+    1. 초기 세팅 방법
+        - nginx.conf파일에서 http만 활성화
+        - 4번까지 진행 한 후 https주석 해제
+        - nginx 재실행
 2. Google Drive에서 받은 `certbot` 폴더를 프로젝트 루트 디렉토리에 저장합니다.
 3. Google Drive에서 받은 `setup.sh` 파일을 프로젝트 루트 디렉토리에 저장합니다.
 4. 터미널에서 아래 명령어로 실행 권한을 부여합니다.
