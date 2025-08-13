@@ -1,18 +1,18 @@
 version: '3.8'
 
 services:
-  # api-server:
-  #   build:
-  #     context: ./api_server  
-  #     dockerfile: Dockerfile  
-  #   ports:
-  #     - "8008:8000" # 집에 포트포워딩한 포트가 많아서 부득이하게 8008로 선언언
-  #   environment:
-  #     - ENV=production
-  #   volumes:
-  #     - ./api_server:/app  
-  #   restart: always
-  #   container_name: api-svr
+  grandparent_agent:
+    build:
+      context: ./grandparent_agent
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    restart: always
+    container_name: grandparent_agent
+    volumes:
+      - ./grandparent_agent:/app
 
   nginx:
     extra_hosts:
