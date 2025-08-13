@@ -27,5 +27,8 @@ sudo usermod -aG docker $USER
 ```bash
 newgrp docker 
 ```
-7. docker-compose up -d 
+7. docker-compose up -d
+
+## Database
+https://docs.google.com/spreadsheets/d/1F_eq7tZC2HZZNuMyuiQl7c4M5TYQaaLNC3I3zwYYPYI/edit?usp=sharing
 
