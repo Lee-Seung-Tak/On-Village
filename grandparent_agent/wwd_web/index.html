@@ -137,7 +137,7 @@
 
         // WAV 파일 전송 관련 변수
         let fileWs;
-        const FILE_UPLOAD_WS_URL = "wss:// www.on-village.com/ws"; // WAV 파일 전송 전용 WebSocket URL
+        const FILE_UPLOAD_WS_URL = "wss://www.on-village.com/ws"; // WAV 파일 전송 전용 WebSocket URL
 
         // 메시지 박스를 위한 DOM 요소 생성 (alert() 대체)
         function showMessage(message, type = 'info') {
@@ -162,7 +162,7 @@
                 return;
             }
 
-            micWs = new WebSocket("ws://" + location.host + "/ws"); // 현재 호스트 사용
+            micWs = new WebSocket("wss://" + location.host + "/ws"); // 현재 호스트 사용
             micWs.binaryType = "arraybuffer";
 
             micWs.onopen = () => {
