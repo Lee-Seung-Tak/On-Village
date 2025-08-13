@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>웨이크워드 탐지 및 웹소켓 전송</title>
+  <style>
+    /* Tailwind CSS와 유사한 스타일링을 위해 기본 스타일 설정 */
+    body {
+      font-family: 'Inter', sans-serif; /* Inter 폰트 사용 */
+      margin: 0;
+      padding: 20px;
+      background-color: #1a202c; /* 다크 모드 배경 */
+      color: #e2e8f0; /* 밝은 텍스트 색상 */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .container {
+      background-color: #2d3748; /* 컨테이너 배경 */
+      padding: 30px;
+      border-radius: 12px; /* 둥근 모서리 */
+      box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2); /* 그림자 */
+      width: 100%;
+      max-width: 600px;
+      box-sizing: border-box;
+      margin-bottom: 20px; /* 버튼과의 간격 추가 */
+    }
+    h2 {
+      color: #63b3ed; /* 제목 색상 */
+      text-align: center;
+      margin-bottom: 25px;
+      font-size: 2.2em;
+    }
+    #status {
+      font-size: 1.4em;
+      font-weight: bold;
+      margin-bottom: 20px;
+      text-align: center;
+      padding: 10px;
+      border-radius: 8px;
+      background-color: #4a5568;
+      color: #a0aec0;
+    }
+    #log {
+      white-space: pre-wrap;
+      background: #1a202c; /* 로그 배경 */
+      color: #0f0; /* 로그 텍스트 색상 */
+      padding: 15px;
+      height: 350px;
+      overflow-y: auto;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+      border: 1px solid #4a5568;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+    .detected {
+      color: #f6ad55; /* 탐지됨 강조 색상 */
+      font-weight: bold;
+      animation: pulse 1.5s infinite; /* 탐지 시 애니메이션 */
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.02); opacity: 0.9; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .button-group {
+      display: flex;
+      justify-content: center;
+      gap: 15px; /* 버튼 사이 간격 */
+      margin-top: 20px;
+    }
+    .button-group button {
+      padding: 12px 25px;
+      font-size: 1.1em;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      color: white;
+      font-weight: bold;
+    }
+    .button-group button:hover {
+      opacity: 0.9;
+    }
+    #startRecord {
+      background-color: #48bb78; /* 녹색 */
+    }
+    #stopRecord {
+      background-color: #e53e3e; /* 빨간색 */
+    }
+    #connectWs, #sendAudioWs { /* 새로운 버튼 스타일 */
+      background-color: #63b3ed; /* 파란색 */
+    }
+    button:disabled {
+      background-color: #4a5568;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>웹 기반 웨이크워드 탐지 및 웹소켓 전송</h2>
+    <p id="status">초기화 중...</p>
+    <div id="log"></div>
+  </div>
+
+  <div class="button-group">
+    <button id="connectWs">웹소켓 연결</button> <button id="startRecord" disabled>녹음 시작</button>
+    <button id="stopRecord" disabled>녹음 중지 및 WAV 저장</button>
+    <button id="sendAudioWs" disabled>웹소켓으로 오디오 전송</button> </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/meyda@5.4.0/dist/web/meyda.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js"></script>
+  
+  <script>
+    // 오디오 및 MFCC 설정 상수
+    const SAMPLE_RATE = 16000; // 오디오 샘플링 레이트 (Hz)
+    const N_MFCC = 13;         // MFCC 계수 개수 (학습 모델과 일치)
+
+    // Meyda MFCC 파라미터 설정
+    const FFT_SIZE = 512;      // FFT 윈도우 크기 (Meyda bufferSize, 2의 거듭제곱)
+    const HOP_SIZE = 320;      // 홉 크기 (계산된 값으로 49 프레임 생성)
+
+    // ONNX 모델이 기대하는 MFCC 프레임 수
+    const MFCC_FRAMES = 49; 
+
+    const WAKEWORD_THRESHOLD = 0.705; // 웨이크워드 탐지 임계값
+
+    // 전역 변수 선언
+    let audioContext;
+    let analyzer;
+    let session = null; 
+    let mfccBuffer = []; // MFCC 프레임을 저장할 버퍼
+    let isProcessing = false; // 예측 중복 실행 방지 플래그
+    let predictionIntervalId = null; // 예측 타이머 ID
+
+    let mediaRecorder; // MediaRecorder 객체
+    let audioChunks = []; // 녹음된 오디오 데이터를 저장할 배열
+    let recordedAudioBlob = null; // 마지막으로 녹음된 오디오 Blob을 저장
+
+    let websocket = null; // 웹소켓 객체
+    const WS_URL = "ws://localhost:4000/ws"; // 웹소켓 서버 URL
+
+    // DOM 요소 참조
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const connectWsBtn = document.getElementById("connectWs");
+    const startRecordBtn = document.getElementById("startRecord");
+    const stopRecordBtn = document.getElementById("stopRecord");
+    const sendAudioWsBtn = document.getElementById("sendAudioWs");
+
+    /**
+     * 콘솔 및 웹 페이지 로그 영역에 메시지를 출력하고 스크롤을 최신 위치로 이동합니다.
+     * @param {...any} args - 출력할 메시지 인자들
+     */
+    function log(...args) {
+      const message = args.map(arg =>
+        typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+      ).join(' ');
+      logEl.innerHTML += message + '\n';
+      logEl.scrollTop = logEl.scrollHeight; // 자동 스크롤
+    }
+
+    /**
+     * ONNX 모델을 로드합니다.
+     */
+    async function loadOnnxModel() {
+      statusEl.innerText = "모델 로딩 중...";
+      try {
+        session = await ort.InferenceSession.create("http://localhost:4000/models/wakeword_crnn_best.onnx"); 
+        statusEl.innerText = "모델 로딩 완료. 웹소켓 연결 대기 중...";
+        log("ONNX 모델 세션 생성 완료.");
+        connectWsBtn.disabled = false; // 모델 로딩 성공 시 웹소켓 연결 버튼 활성화
+      } catch (e) {
+        statusEl.innerText = "모델 로딩 실패!";
+        log("모델 로딩 실패:", e.message);
+        console.error("ONNX 모델 로딩 오류:", e);
+      }
+    }
+
+    /**
+     * 웹소켓 서버에 연결합니다.
+     */
+    function connectWebSocket() {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        log("웹소켓이 이미 연결되어 있습니다.");
+        return;
+      }
+
+      log(`웹소켓 연결 시도 중: ${WS_URL}`);
+      connectWsBtn.disabled = true; // 연결 시도 중 버튼 비활성화
+      statusEl.innerText = "웹소켓 연결 중...";
+
+      websocket = new WebSocket(WS_URL);
+
+      websocket.onopen = () => {
+        log("웹소켓 연결 성공.");
+        statusEl.innerText = "웹소켓 연결 완료. 마이크 녹음 준비됨.";
+        startRecordBtn.disabled = false; // 웹소켓 연결 성공 시 녹음 시작 버튼 활성화
+      };
+
+      websocket.onmessage = (event) => {
+        log(`웹소켓 메시지 수신: ${event.data}`);
+        // 서버로부터 받은 메시지 처리 로직 (예: 서버에서 탐지 결과를 보낼 경우)
+      };
+
+      websocket.onerror = (error) => {
+        log("웹소켓 오류 발생:", error);
+        statusEl.innerText = "웹소켓 오류!";
+        console.error("웹소켓 오류:", error);
+      };
+
+      websocket.onclose = (event) => {
+        log(`웹소켓 연결 종료. 코드: ${event.code}, 이유: ${event.reason}`);
+        statusEl.innerText = "웹소켓 연결 끊김.";
+        connectWsBtn.disabled = false; // 연결 종료 시 다시 연결 버튼 활성화
+        startRecordBtn.disabled = true;
+        stopRecordBtn.disabled = true;
+        sendAudioWsBtn.disabled = true;
+        websocket = null;
+      };
+    }
+
+    /**
+     * MFCC 프레임 배열을 ONNX 모델 입력에 필요한 Float32Array 형태로 변환합니다.
+     * 모델 입력 형태: [1, 1, N_MFCC, MFCC_FRAMES]
+     * @param {Array<Array<number>>} mfccFrames - MFCC 프레임 배열 (각 프레임은 N_MFCC 길이의 배열)
+     * @returns {Float32Array} - ONNX 입력에 적합한 평탄화된 Float32Array
+     */
+    function convertFramesToTensor(mfccFrames) {
+      const frames = new Float32Array(N_MFCC * MFCC_FRAMES);
+      for (let i = 0; i < MFCC_FRAMES; i++) {
+        if (i < mfccFrames.length) {
+          for (let m = 0; m < N_MFCC; m++) {
+            frames[i * N_MFCC + m] = mfccFrames[i][m];
+          }
+        } else {
+          // 부족한 프레임은 0으로 패딩
+          for (let m = 0; m < N_MFCC; m++) {
+            frames[i * N_MFCC + m] = 0;
+          }
+        }
+      }
+      return frames;
+    }
+
+    /**
+     * 마이크 입력을 시작하고 실시간 오디오 처리를 수행합니다.
+     */
+    async function startAudioProcessing() {
+      if (audioContext && audioContext.state === 'running') {
+        log("오디오 처리가 이미 실행 중입니다.");
+        return;
+      }
+      
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const source = audioContext.createMediaStreamSource(stream);
+
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+        mediaRecorder.onstop = async () => {
+          log("녹음 중지. WAV 파일 처리 중...");
+          // 녹음된 오디오 데이터를 WAV Blob으로 생성
+          recordedAudioBlob = new Blob(audioChunks, { type: 'audio/wav' }); 
+          audioChunks = []; // 버퍼 초기화
+
+          // WAV 파일 다운로드 링크 제공 (기존 기능 유지)
+          const audioUrl = URL.createObjectURL(recordedAudioBlob);
+          const a = document.createElement('a');
+          a.href = audioUrl;
+          a.download = 'recorded_16khz_audio.wav';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(audioUrl); 
+          log("recorded_16khz_audio.wav 파일 다운로드 완료.");
+
+          if (websocket && websocket.readyState === WebSocket.OPEN) {
+             sendAudioWsBtn.disabled = false; // 녹음 완료 & 웹소켓 연결 시 전송 버튼 활성화
+          }
+
+          // 모든 리소스 해제 (MediaRecorder 중지 시)
+          stopAudioProcessing(stream);
+        };
+        mediaRecorder.start();
+        log("MediaRecorder 시작.");
+
+        analyzer = Meyda.createMeydaAnalyzer({
+          audioContext,
+          source,
+          bufferSize: FFT_SIZE,
+          hopSize: HOP_SIZE,
+          featureExtractors: ["mfcc"],
+          numberOfMFCCCoefficients: N_MFCC,
+          callback: (features) => {
+            if (!features || !features.mfcc) return;
+            
+            mfccBuffer.push(features.mfcc);
+            if (mfccBuffer.length > MFCC_FRAMES * 2) { 
+                mfccBuffer = mfccBuffer.slice(-MFCC_FRAMES * 2); 
+            }
+          }
+        });
+
+        analyzer.start();
+        log("마이크 입력 및 오디오 처리 시작.");
+        statusEl.innerText = "마이크 입력 대기 중...";
+
+        predictionIntervalId = setInterval(async () => {
+          if (mfccBuffer.length >= MFCC_FRAMES && !isProcessing) {
+            isProcessing = true;
+
+            const currentFrames = mfccBuffer.slice(-MFCC_FRAMES);
+            const inputTensorData = convertFramesToTensor(currentFrames);
+            const inputTensor = new ort.Tensor("float32", inputTensorData, [1, 1, N_MFCC, MFCC_FRAMES]);
+
+            try {
+              const results = await session.run({ input: inputTensor });
+              const outputData = results[session.outputNames[0]].data;
+              const exp0 = Math.exp(outputData[0]);
+              const exp1 = Math.exp(outputData[1]);
+              const probWakeword = exp1 / (exp0 + exp1);
+
+              log(`확률: ${(probWakeword * 100).toFixed(2)}%`);
+
+              if (probWakeword >= WAKEWORD_THRESHOLD) {
+                statusEl.innerHTML = `<span class="detected">웨이크워드 탐지됨! (${(probWakeword * 100).toFixed(2)}%)</span>`;
+                log(">>> 웨이크워드 탐지됨! <<<");
+              } else {
+                statusEl.innerText = `탐지 안됨 (${(probWakeword * 100).toFixed(2)}%)`;
+              }
+
+            } catch (e) {
+              log("ONNX 추론 중 오류 발생:", e.message);
+              console.error("ONNX 추론 오류:", e);
+            } finally {
+              isProcessing = false;
+            }
+          }
+        }, 1000);
+
+        startRecordBtn.disabled = true;
+        stopRecordBtn.disabled = false;
+        sendAudioWsBtn.disabled = true; // 녹음 시작 시 전송 버튼 비활성화
+
+      } catch (e) {
+        statusEl.innerText = "마이크 접근 실패!";
+        log("마이크 접근 실패:", e.message);
+        console.error("마이크 접근 오류:", e);
+        startRecordBtn.disabled = false; // 실패 시 다시 활성화
+        stopRecordBtn.disabled = true;
+        sendAudioWsBtn.disabled = true;
+      }
+    }
+
+    /**
+     * 오디오 처리를 중지하고 모든 리소스를 해제합니다.
+     * @param {MediaStream} [stream] - MediaStream 객체 (선택 사항, 마이크 트랙 중지용)
+     */
+    function stopAudioProcessing(stream = null) {
+        if (predictionIntervalId) {
+            clearInterval(predictionIntervalId);
+            predictionIntervalId = null;
+        }
+        if (analyzer) {
+            analyzer.stop();
+            analyzer = null; // Meyda Analyzer 해제
+        }
+        if (audioContext) {
+            audioContext.close().then(() => {
+                log("AudioContext 닫힘.");
+            });
+            audioContext = null;
+        }
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop()); // 마이크 트랙 중지
+            log("마이크 트랙 중지됨.");
+        }
+        
+        log("오디오 처리 중지됨.");
+        statusEl.innerText = "중지됨.";
+        startRecordBtn.disabled = false;
+        stopRecordBtn.disabled = true; // 녹음 중지 버튼은 여기서 비활성화
+    }
+
+    /**
+     * 녹음된 오디오 Blob을 웹소켓으로 전송합니다.
+     */
+    async function sendAudioViaWebSocket() {
+      if (!recordedAudioBlob) {
+        log("전송할 녹음된 오디오가 없습니다. 먼저 녹음을 완료해주세요.");
+        return;
+      }
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        log("웹소켓 연결이 활성화되어 있지 않습니다. 먼저 웹소켓에 연결해주세요.");
+        return;
+      }
+
+      log("웹소켓을 통해 오디오 전송 중...");
+      sendAudioWsBtn.disabled = true; // 전송 중 버튼 비활성화
+
+      try {
+        // Blob 데이터를 ArrayBuffer로 변환 후 웹소켓으로 전송
+        const arrayBuffer = await recordedAudioBlob.arrayBuffer();
+        websocket.send(arrayBuffer); // 바이너리 데이터 전송
+
+        log("오디오 데이터 웹소켓 전송 완료.");
+        statusEl.innerText = "웹소켓 전송 완료!";
+      } catch (error) {
+        log("웹소켓 오디오 전송 중 오류 발생:", error.message);
+        statusEl.innerText = "웹소켓 전송 실패!";
+        console.error("웹소켓 전송 오류:", error);
+      } finally {
+        sendAudioWsBtn.disabled = false; // 전송 완료 후 버튼 다시 활성화
+        recordedAudioBlob = null; // 전송 후 Blob 초기화
+      }
+    }
+
+    // 이벤트 리스너 추가
+    connectWsBtn.addEventListener('click', connectWebSocket);
+    startRecordBtn.addEventListener('click', startAudioProcessing);
+    stopRecordBtn.addEventListener('click', () => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop(); // MediaRecorder 중지 (ondataavailable, onstop 이벤트 발생)
+            log("MediaRecorder 중지 요청됨.");
+        } else {
+            // MediaRecorder가 녹음 중이 아니더라도 오디오 처리를 중지해야 할 경우
+            stopAudioProcessing();
+            sendAudioWsBtn.disabled = true; // 녹음되지 않은 상태이므로 전송 버튼 비활성화
+        }
+    });
+    sendAudioWsBtn.addEventListener('click', sendAudioViaWebSocket);
+
+    // 페이지 로드 시 초기화 함수 호출
+    loadOnnxModel(); // 모델 로딩 먼저
+  </script>
+</body>
+</html>

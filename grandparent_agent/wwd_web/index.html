@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket 테스트</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #333;
+            padding: 20px; /* 전체적인 패딩 추가 */
+            box-sizing: border-box; /* 패딩이 너비에 포함되도록 */
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 2rem;
+            text-align: center;
+            font-size: 2.2em; /* 제목 크기 조정 */
+        }
+        .section {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+            width: 100%;
+            max-width: 500px; /* 최대 너비 설정 */
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .section h2 {
+            color: #34495e;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: calc(50% - 20px); /* 버튼 너비 조정 */
+            min-width: 120px; /* 최소 너비 설정 */
+        }
+        button:hover {
+            background-color: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        input[type="file"] {
+            display: block;
+            margin: 0 auto 20px auto;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            width: calc(100% - 20px);
+            box-sizing: border-box;
+        }
+        /* 메시지 박스 스타일 */
+        #messageBox {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            z-index: 1000;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            font-size: 1.1em;
+            text-align: center;
+            max-width: 90%; /* 모바일에서 너무 길어지지 않도록 */
+        }
+        /* 모바일 반응형 디자인 */
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.8em;
+            }
+            .section {
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            button {
+                width: calc(100% - 20px); /* 모바일에서 버튼 너비 100% */
+                margin: 8px 0;
+            }
+            input[type="file"] {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>FastAPI WebSocket 음성 수신 테스트</h1>
+
+    <div class="section">
+        <h2>마이크 스트리밍</h2>
+        <div>
+            <button onclick="startMicrophoneStream()">시작</button>
+            <button onclick="stopMicrophoneStream()">중지</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>WAV 파일 전송</h2>
+        <input type="file" id="wavFileInput" accept=".wav">
+        <button onclick="sendWavFile()">WAV 파일 전송</button>
+    </div>
+
+    <div id="messageBox"></div>
+
+    <script>
+        // 마이크 스트리밍 관련 변수
+        let micWs;
+        let micAudioContext;
+        let micProcessor;
+        let micInput;
+
+        // WAV 파일 전송 관련 변수
+        let fileWs;
+        const FILE_UPLOAD_WS_URL = "wss:// www.on-village.com/ws"; // WAV 파일 전송 전용 WebSocket URL
+
+        // 메시지 박스를 위한 DOM 요소 생성 (alert() 대체)
+        function showMessage(message, type = 'info') {
+            let messageBox = document.getElementById('messageBox');
+            if (!messageBox) {
+                messageBox = document.createElement('div');
+                messageBox.id = 'messageBox';
+                document.body.appendChild(messageBox);
+            }
+            messageBox.textContent = message;
+            messageBox.style.backgroundColor = type === 'error' ? '#e74c3c' : (type === 'success' ? '#27ae60' : '#333');
+            messageBox.style.opacity = '1';
+            setTimeout(() => {
+                messageBox.style.opacity = '0';
+            }, 3000); // 3초 후 사라짐
+        }
+
+        // --- 마이크 스트리밍 기능 ---
+        function startMicrophoneStream() {
+            if (micWs && micWs.readyState === WebSocket.OPEN) {
+                showMessage("마이크 WebSocket이 이미 연결되어 있습니다.", "info");
+                return;
+            }
+
+            micWs = new WebSocket("ws://" + location.host + "/ws"); // 현재 호스트 사용
+            micWs.binaryType = "arraybuffer";
+
+            micWs.onopen = () => {
+                showMessage("마이크 WebSocket 연결 성공. 마이크 접근을 요청합니다...", "info");
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    micInput = micAudioContext.createMediaStreamSource(stream);
+                    micProcessor = micAudioContext.createScriptProcessor(4096, 1, 1);
+
+                    micInput.connect(micProcessor);
+                    micProcessor.connect(micAudioContext.destination);
+
+                    micProcessor.onaudioprocess = (e) => {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const int16Data = float32ToInt16(inputData);
+                        if (micWs.readyState === WebSocket.OPEN) {
+                            micWs.send(int16Data.buffer);
+                        }
+                    };
+
+                    micWs.onmessage = (msg) => {
+                        console.log("Server (Mic):", msg.data);
+                        // showMessage("서버 (마이크): " + msg.data, "info");
+                    };
+
+                    micWs.onerror = (error) => {
+                        console.error("마이크 WebSocket 오류:", error);
+                        showMessage("마이크 WebSocket 오류 발생!", "error");
+                    };
+
+                    micWs.onclose = (event) => {
+                        console.log("마이크 WebSocket 종료:", event);
+                        showMessage("마이크 WebSocket 연결이 종료되었습니다.", "info");
+                    };
+
+                    showMessage("마이크 연결 성공. 음성 전송 시작.", "success");
+                })
+                .catch(err => {
+                    console.error("마이크 접근 오류:", err);
+                    showMessage("마이크 접근에 실패했습니다. 권한을 확인해주세요.", "error");
+                });
+            };
+
+            micWs.onerror = (error) => {
+                console.error("마이크 WebSocket 연결 오류:", error);
+                showMessage("마이크 WebSocket 연결에 실패했습니다.", "error");
+            };
+        }
+
+        function stopMicrophoneStream() {
+            if (micProcessor) {
+                micProcessor.disconnect();
+                micProcessor = null;
+            }
+            if (micInput) {
+                micInput.disconnect();
+                micInput = null;
+            }
+            if (micAudioContext) {
+                micAudioContext.close();
+                micAudioContext = null;
+            }
+            if (micWs) {
+                micWs.close();
+                micWs = null;
+            }
+            showMessage("마이크 음성 전송 중지.", "info");
+        }
+
+        // Float32Array를 Int16Array로 변환하는 함수
+        function float32ToInt16(float32Array) {
+            const int16Array = new Int16Array(float32Array.length);
+            for (let i = 0; i < float32Array.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+                int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            return int16Array;
+        }
+
+        // --- WAV 파일 전송 기능 ---
+        function sendWavFile() {
+            const fileInput = document.getElementById('wavFileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showMessage("WAV 파일을 선택해주세요.", "error");
+                return;
+            }
+
+            if (!file.name.toLowerCase().endsWith('.wav')) {
+                showMessage("선택된 파일이 WAV 형식이 아닙니다.", "error");
+                return;
+            }
+
+            showMessage(`'${file.name}' 파일 전송 준비 중...`, "info");
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const arrayBuffer = event.target.result; // 파일 내용을 ArrayBuffer로 읽어옴
+
+                // 기존 파일 전송 WebSocket이 열려있다면 닫기
+                if (fileWs && fileWs.readyState === WebSocket.OPEN) {
+                    fileWs.close();
+                }
+
+                fileWs = new WebSocket(FILE_UPLOAD_WS_URL); // 새로운 WebSocket 연결
+                fileWs.binaryType = "arraybuffer"; // 바이너리 데이터 전송 설정
+
+                fileWs.onopen = () => {
+                    showMessage(`'${file.name}' 전송 시작...`, "info");
+                    fileWs.send(arrayBuffer); // ArrayBuffer 전송
+                };
+
+                fileWs.onmessage = (msg) => {
+                    console.log("Server (File):", msg.data);
+                    showMessage(`서버 (파일): ${msg.data}`, "success");
+                };
+
+                fileWs.onerror = (error) => {
+                    console.error("파일 WebSocket 오류:", error);
+                    showMessage("파일 WebSocket 오류 발생!", "error");
+                };
+
+                fileWs.onclose = (event) => {
+                    console.log("파일 WebSocket 종료:", event);
+                    if (event.code === 1000) { // Normal closure
+                        showMessage(`'${file.name}' 파일 전송 완료.`, "success");
+                    } else {
+                        showMessage(`파일 WebSocket 연결이 비정상적으로 종료되었습니다. 코드: ${event.code}`, "error");
+                    }
+                };
+            };
+
+            reader.onerror = (error) => {
+                console.error("파일 읽기 오류:", error);
+                showMessage("파일을 읽는 중 오류가 발생했습니다.", "error");
+            };
+
+            reader.readAsArrayBuffer(file); // 파일을 ArrayBuffer로 읽기 시작
+        }
+    </script>
+</body>
+</html>
