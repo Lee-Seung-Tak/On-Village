@@ -94,13 +94,16 @@ def wwd_is_detected(audio_bytes):
         # Ensure waveform is the correct length
         if waveform.shape[1] < SAMPLE_LEN:
             waveform = F.pad(waveform, (0, SAMPLE_LEN - waveform.shape[1]))
+            
         elif waveform.shape[1] > SAMPLE_LEN:
             waveform = waveform[:, :SAMPLE_LEN]
 
         # Apply VAD to check for voice activity
         frame_duration = 30  # ms
-        frame_samples = int(SAMPLE_RATE * frame_duration / 1000)
+        frame_samples  = int(SAMPLE_RATE * frame_duration / 1000)
+        
         is_speech = False
+        
         for i in range(0, SAMPLE_LEN - frame_samples + 1, frame_samples):
             frame = (waveform[0, i:i + frame_samples] * 32768).numpy().astype(np.int16)
             if vad.is_speech(frame.tobytes(), SAMPLE_RATE):
@@ -108,20 +111,21 @@ def wwd_is_detected(audio_bytes):
                 break
 
         if not is_speech:
-            print("음성 세그먼트 감지되지 않음")
             return False, 0.0
 
         # Apply MFCC transformation
         with torch.no_grad():
-            mfcc = mfcc_transform(waveform.to(device))  # Shape: [1, N_MFCC, T]
+            
+            mfcc   = mfcc_transform(waveform.to(device))  # Shape: [1, N_MFCC, T]
             output = model(mfcc.unsqueeze(0))  # Add batch dimension: [1, 1, N_MFCC, T]
-            prob = F.softmax(output, dim=1)
-            pred = prob.argmax(dim=1).item()
+            prob   = F.softmax(output, dim=1)
+            pred   = prob.argmax(dim=1).item()
+            
             confidence = prob[0, 1].item()  # Probability of positive class (wake word)
 
         # print(f"웨이크워드 감지: {'감지됨' if pred == 1 else '미감지'}, 신뢰도: {confidence:.4f}")
         # return pred == 1 and confidence > 0.9, confidence
         return pred == 1 and confidence >= 0.7, confidence
     except Exception as e:
-        print(f"wwd_is_detected 오류: {e}")
+        print(f"wwd_is_detected 오류: {e}",flush=True)
         return False, 0.0
