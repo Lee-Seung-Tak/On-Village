@@ -1,8 +1,13 @@
 # 베이스 이미지
 FROM python:3.11
 
+ENV PYTHONUNBUFFERED=1
+
 # 작업 디렉토리
 WORKDIR /app
+
+# pip upgrade
+RUN python -m pip install --upgrade pip
 
 # 의존성 설치
 COPY requirements.txt ./
