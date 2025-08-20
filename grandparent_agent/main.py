@@ -6,7 +6,7 @@ from wake_word_model.wake_word import RECORD_BYTES, SLIDING_STEP_BYTES
 from generate.stt import pcm_to_wav, transcribe_wav_to_text
 from generate.util.util import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, CHUNK_DURATION_MS, MAX_SILENCE_COUNT, frame_size
 from generate.util.util import vad
-
+from generate.generate import llm_generate
 import os
 
 app = FastAPI()
@@ -52,6 +52,7 @@ async def websocket_endpoint(ws: WebSocket):
                     silence_count = 0
                    
                     # 감지가 된 이후 사용자 음성 데이터 bytearr에 extend
+                    test = 0
                     while True:
                         data = await ws.receive_bytes()
                         user_input_buffer.extend(data)
@@ -69,7 +70,9 @@ async def websocket_endpoint(ws: WebSocket):
 
                         if silence_count >= MAX_SILENCE_COUNT:
                             break
-
+                        test += 1
+                        if test > 25 :
+                            break
                     # 전체 데이터를 그대로 WAV로 저장
                     user_audio_path   = await pcm_to_wav(user_input_buffer, SAMPLE_WIDTH, SAMPLE_RATE)
                     print("user_audio_path : ", user_audio_path ,flush=True)
@@ -89,6 +92,7 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.get("/conversation", response_class=HTMLResponse)
 async def get():
+    llm_generate()
     current_dir = os.path.dirname(os.path.abspath(__file__))
     html_file_path = os.path.join(current_dir, 'wwd_web', 'index.html')
     with open(html_file_path, 'r', encoding='utf-8') as f:
