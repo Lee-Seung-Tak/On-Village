@@ -71,11 +71,11 @@ def llm_generate():
         print(f"ERROR: Can't invoke '{model_id}'. Reason: {e}")
         # exit(1)
 
-    # # Decode the response body.
-    # model_response = json.loads(response["body"].read())
+    # Decode the response body.
+    model_response = json.loads(response["body"].read())
 
-    # # Extract and print the response text.
-    # response_text = model_response["content"][0]["text"]
-    # print(response_text)
+    # Extract and print the response text.
+    response_text = model_response["content"][0]["text"]
+    print(response_text)
 
 
