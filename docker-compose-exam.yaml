@@ -1,7 +1,15 @@
 version: '3.8'
 
 services:
-
+  public_agent:
+    build:
+      context: ./public_agent
+    container_name: public_agent
+    env_file:
+      - .env
+    restart: always
+    networks: [webnet]  
+  
   grandparent_agent:
     build:
       context: ./grandparent_agent
@@ -41,3 +49,7 @@ services:
     depends_on:
       - nginx
     restart: always
+
+networks:
+  webnet:
+    driver: bridge
