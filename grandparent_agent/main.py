@@ -29,18 +29,22 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     
-    await ws.accept()
     print("[LOG] - connected cliend")
+    
+    await ws.accept()
     buffer            = bytearray()
     user_input_buffer = bytearray()
+ 
 
     try:
         while True:
-            data = await ws.receive_bytes()
+            
+            data        = await ws.receive_bytes()
+            stop_status = False
             buffer.extend(data)
-      
+            
             # WWD 검출을 
-            while len(buffer) >= RECORD_BYTES:
+            while len(buffer) >= RECORD_BYTES or stop_status :
      
                 window_bytes = buffer[:RECORD_BYTES]
                 buffer       = buffer[SLIDING_STEP_BYTES:]
@@ -48,38 +52,46 @@ async def websocket_endpoint(ws: WebSocket):
                 
                 # WWD 감지가 된 경우
                 if detected:  # 웨이크워드 감지
-                    print("[Detected] Talk ===>",flush=True)
+                    print(f"[Detected] Talk ===> confidence_{confidence} ",flush=True)
                     silence_count = 0
                    
                     # 감지가 된 이후 사용자 음성 데이터 bytearr에 extend
-                    test = 0
+                    stop_sig = 0
+                    
                     while True:
                         data = await ws.receive_bytes()
                         user_input_buffer.extend(data)
 
                         # 최신 frame만 VAD 체크
-                        if len(user_input_buffer) >= frame_size:
+                        if len( user_input_buffer ) >= frame_size:
                             
-                            frame = user_input_buffer[-frame_size:]
+                            frame = user_input_buffer[ -frame_size: ]
                             
-                            if not vad.is_speech(bytes(frame), SAMPLE_RATE):
+                            if not vad.is_speech( bytes( frame ), SAMPLE_RATE ):
                                 silence_count += 1
                                 
                             else:
                                 silence_count = 0
-
+                                stop_sig      += 1
+                                
                         if silence_count >= MAX_SILENCE_COUNT:
                             break
-                        test += 1
-                        if test > 25 :
+                        
+                        if stop_sig > MAX_SILENCE_COUNT :
                             break
+                        
                     # 전체 데이터를 그대로 WAV로 저장
                     user_audio_path   = await pcm_to_wav(user_input_buffer, SAMPLE_WIDTH, SAMPLE_RATE)
-                    print("user_audio_path : ", user_audio_path ,flush=True)
                     stt_data          = await transcribe_wav_to_text(user_audio_path)
+                    
+                    print("user_audio_path : ", user_audio_path ,flush=True)
                     print("stt_data : ", stt_data ,flush=True)
+                    
+                    llm_generate(stt_data)
+                    
                     buffer            = bytearray()
                     user_input_buffer = bytearray()
+                    stop_status       = True
                 else:
                     await ws.send_text(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})")
                 
@@ -92,7 +104,6 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.get("/conversation", response_class=HTMLResponse)
 async def get():
-    llm_generate()
     current_dir = os.path.dirname(os.path.abspath(__file__))
     html_file_path = os.path.join(current_dir, 'wwd_web', 'index.html')
     with open(html_file_path, 'r', encoding='utf-8') as f:
