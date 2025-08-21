@@ -6,7 +6,7 @@ load_dotenv()
 
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = "ap-northeast-2"  # 서울 리전
+AWS_REGION = "us-east-1"  # 서울 리전
 
 
 
@@ -29,15 +29,25 @@ frame_size = int(SAMPLE_RATE * SAMPLE_WIDTH * CHUNK_DURATION_MS / 1000)
 import boto3
 from langchain_aws import ChatBedrock
 
-bedrock_client = boto3.client(
-    "bedrock-runtime",
-    region_name=AWS_REGION,   # 반드시 본인 리전에 맞게 변경
-    aws_access_key_id=AWS_ACCESS_KEY,
-    aws_secret_access_key=AWS_SECRET_KEY
+client = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+
+
+model_kwargs = {
+    "max_tokens": 512,
+    "temperature": 0.5,
+    "top_k": 250,
+    "top_p": 1,
+    "stop_sequences": ["\n\nHuman"]
+}
+
+# LangChain's Bedrock Wrapper (ChatBedrock)
+grandparent_agent = ChatBedrock(
+    client=client,
+    model_id=model_id,
+    model_kwargs=model_kwargs
 )
 
-# LangChain용 Bedrock 래퍼
-grandparent_agent = ChatBedrock(
-    client=bedrock_client,
-    model_id="us.anthropic.claude-3-haiku-20240307-v1:0"
-)
+from langchain_core.output_parsers import StrOutputParser
+output_parser = StrOutputParser()

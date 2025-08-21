@@ -125,7 +125,7 @@ def wwd_is_detected(audio_bytes):
 
         # print(f"웨이크워드 감지: {'감지됨' if pred == 1 else '미감지'}, 신뢰도: {confidence:.4f}")
         # return pred == 1 and confidence > 0.9, confidence
-        return pred == 1 and confidence >= 0.8, confidence
+        return pred == 1 and confidence >= 0.7, confidence
     except Exception as e:
         print(f"wwd_is_detected 오류: {e}",flush=True)
         return False, 0.0
