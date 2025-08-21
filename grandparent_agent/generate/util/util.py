@@ -17,8 +17,8 @@ import webrtcvad
 SAMPLE_RATE       = 16000
 SAMPLE_WIDTH      = 2
 CHANNELS          = 1
-CHUNK_DURATION_MS = 30
-MAX_SILENCE_COUNT = 17
+CHUNK_DURATION_MS = 20
+MAX_SILENCE_COUNT = 15
 
 vad = webrtcvad.Vad()
 vad.set_mode(0)  # 0~3, 민감도
