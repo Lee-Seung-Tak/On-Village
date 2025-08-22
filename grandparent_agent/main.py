@@ -6,7 +6,9 @@ from wake_word_model.wake_word import RECORD_BYTES, SLIDING_STEP_BYTES
 from generate.stt import pcm_to_wav, transcribe_wav_to_text
 from generate.util.util import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, CHUNK_DURATION_MS, MAX_SILENCE_COUNT, frame_size
 from generate.util.util import vad
-from generate.generate import llm_generate, text_to_speech_aws_polly
+# from generate.generate import llm_generate, text_to_speech_aws_polly, 
+from generate.generate import llm_generate, text_to_speech_aws_polly, rag_to_speech
+from generate.prompts import insert_chromadb
 import os
 import base64
 import json
@@ -45,7 +47,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+@app.get('/test')
+async def test():
+    insert_chromadb()
+    
+    
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
 
@@ -116,8 +122,9 @@ async def websocket_endpoint(ws: WebSocket):
                     print("user_audio_path : ", user_audio_path ,flush=True)
                     print("stt_data : ", stt_data ,flush=True)
                     
-                    llm_resposne = llm_generate(stt_data)
-                    audio_bytes = await text_to_speech_aws_polly(llm_resposne)
+                    # llm_resposne = llm_generate(stt_data)
+                    llm_resposne = await rag_to_speech(stt_data)
+                    audio_bytes = await text_to_speech_aws_polly(llm_resposne[audio_bytes])
                     
                     speaking_status = status["speaking"].copy()
                     speaking_status["audio_base64"] = base64.b64encode(audio_bytes).decode("utf-8")
