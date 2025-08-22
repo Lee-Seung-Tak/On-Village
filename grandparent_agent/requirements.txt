@@ -65,3 +65,5 @@ boto3==1.40.10
 langchain
 langchain-aws
 langchain-core
+chromadb
+langchain-community
