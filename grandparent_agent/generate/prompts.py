@@ -21,61 +21,29 @@ prompts = [
 ]
 
 
-import boto3
-import numpy as np
-import json
-# AWS Bedrock Embeddings (예시: text-embedding-3-small)
-bedrock = boto3.client("bedrock", region_name="ap-northeast-2")
+import boto3, json
 
-from langchain.embeddings.base import Embeddings
-
-class AWSEmbeddings(Embeddings):
-    def embed_documents(self, texts):
-        return [self._embed(text) for text in texts]
-
-    def embed_query(self, text):
-        return self._embed(text)
-
-    def _embed(self, text):
-        response = bedrock.invoke_model(
-            modelId="anthropic.claude-embedding-3-small",
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({"input": text})
-        )
-        result = json.loads(response["body"])
-        return np.array(result["embedding"])
+# Bedrock runtime client
+bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+model_id = "amazon.titan-embed-text-v2:0"
 
 
-from langchain.prompts import ChatPromptTemplate
 
-vectorstore = Chroma(
-    client=client,
-    collection_name="prompt_collection",
-    embedding_function=AWSEmbeddings()
-)
+def titan_embed(text: str):
+    body = json.dumps({"inputText": text})
+    response = bedrock.invoke_model(modelId=model_id, body=body)
+    model_response = json.loads(response["body"].read())
+    return model_response["embedding"]  # 1024차원 리스트 반환
 
-top_k = 3
-retriever = vectorstore.as_retriever(search_kwargs={"k": top_k})
+def insert_chromadb():
+    client.delete_collection("prompt_collection")
 
-# 2) LLM + Chain 세팅 (grandparent_agent + output_parser 사용)
-
-# ChatPromptTemplate 예시
-system_template = """
-    당신은 AI assistant '기쁨이'입니다.
-    어르신을 존중하며 존댓말로만 대답하세요.
-    아래는 참고할 수 있는 프롬프트입니다:
-    {context}
-"""
-
-prompt_template = ChatPromptTemplate.from_messages([
-    ("system", system_template),
-    ("user", "{question}")
-])
-
-# chromadb에 prompts 저장
-def insert_chromadb() :
-    # ChromaDB에 넣을 수 있도록 데이터 포맷 변경
+    # Titan 임베딩(1024차원)에 맞는 새 컬렉션 생성
+    collection = client.create_collection(
+        name="prompt_collection",
+        metadata={"hnsw:space": "cosine"}  # 보통 cosine distance 사용
+    )
+    
     ids = [f"doc_{i}" for i in range(len(prompts))]
     documents = [p["sample_prompt"] for p in prompts]
     metadatas = [
@@ -87,16 +55,15 @@ def insert_chromadb() :
         } for p in prompts
     ]
 
-    # 컬렉션에 데이터 추가
+    # Titan 임베딩 직접 생성
+    embeddings = [titan_embed(doc) for doc in documents]
+
+    # ChromaDB에 Titan 임베딩과 함께 저장
     collection.add(
         documents=documents,
+        embeddings=embeddings,
         metadatas=metadatas,
         ids=ids
     )
 
-    print(f"{len(prompts)}개의 문서가 성공적으로 벡터 DB에 추가되었습니다.")
-
-    # 데이터가 잘 들어갔는지 확인 (선택 사항)
-    results = collection.get(ids=ids)
-    print("\n저장된 문서 확인:")
-    print(results, flush=True)
+    print(f"{len(prompts)}개의 문서가 Titan 임베딩으로 성공적으로 벡터 DB에 추가되었습니다.")
