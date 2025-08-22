@@ -3,7 +3,7 @@ from langchain.prompts import ChatPromptTemplate
 import boto3
 import json
 from .util.util import grandparent_agent, output_parser
-from grandparent_agent.generate.retriever import retriever, prompt_template
+from .retriever import init_rag_system
 
 def llm_generate( user_input: str ): 
     try:
@@ -27,42 +27,27 @@ def llm_generate( user_input: str ):
         print(f"ERROR: Can't invoke ==> Reason: {e}")
 
 
+from .tts import text_to_speech_aws_polly
+
 async def rag_to_speech(user_input: str, voice_id="Seoyeon", engine="neural"):
-    # 3-1) 리트리버로 관련 프롬프트 검색
-    docs = retriever.get_relevant_documents(user_input)
+    # 리트리버로 관련 프롬프트 검색
+    retriever,prompt_template = init_rag_system()
+
+    docs = retriever.invoke(user_input)
     context = "\n\n".join([d.page_content for d in docs]) if docs else "관련 자료 없음"
     print("context :" , context, flush=True)
-    # 3-2) LLM 호출
+    
+    # LLM 호출
     chain = prompt_template | grandparent_agent | output_parser
+    
     response_text = chain.invoke({"question": user_input, "context": context})
+    audio_bytes   = await text_to_speech_aws_polly( user_input )
 
-    # 3-3) AWS Polly TTS
-    polly = boto3.client("polly", region_name="ap-northeast-2")
-    tts_response = polly.synthesize_speech(
-        Text=response_text,
-        OutputFormat="mp3",
-        VoiceId=voice_id,
-        Engine=engine
-    )
-    audio_bytes = tts_response["AudioStream"].read()
 
-    # 3-4) 텍스트 + 오디오 반환
+    # 텍스트 + 오디오 반환
     return {
         "text": response_text,
         "audio_bytes": audio_bytes
     }
     
-async def text_to_speech_aws_polly(text, voice_id="Seoyeon", engine="neural"):
-    polly = boto3.client("polly", region_name="ap-northeast-2")
-    
-    response = polly.synthesize_speech(
-        Text=text,
-        OutputFormat="mp3",
-        VoiceId=voice_id,
-        Engine=engine
-    )
 
-    audio_bytes = response["AudioStream"].read()  # 바이너리 데이터 추출
-
-    # WebSocket 바이너리 전송
-    return audio_bytes
