@@ -14,6 +14,15 @@ services:
     volumes:
       - ./grandparent_agent:/app
 
+  chroma:
+    image: chromadb/chroma
+    container_name: on-village_chroma
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./chroma-data:/data
+    restart: unless-stopped
+
   nginx:
     extra_hosts:
       - "host.docker.internal:host-gateway"
