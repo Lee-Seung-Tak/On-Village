@@ -67,3 +67,4 @@ langchain-aws
 langchain-core
 chromadb
 langchain-community
+langchain-chroma
