@@ -8,7 +8,7 @@ from generate.util.util import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, CHUNK_DURATI
 from generate.util.util import vad
 # from generate.generate import llm_generate, text_to_speech_aws_polly, 
 from generate.generate import llm_generate, text_to_speech_aws_polly, rag_to_speech
-from generate.prompts import insert_chromadb
+from generate.embedding import insert_chromadb
 import os
 import base64
 import json
@@ -47,11 +47,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-@app.get('/test')
-async def test():
+@app.get('/insert_chroma')
+async def insert_chroma():
     insert_chromadb()
     
-    
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
 
@@ -124,10 +124,10 @@ async def websocket_endpoint(ws: WebSocket):
                     
                     # llm_resposne = llm_generate(stt_data)
                     llm_resposne = await rag_to_speech(stt_data)
-                    audio_bytes = await text_to_speech_aws_polly(llm_resposne[audio_bytes])
+                   
                     
                     speaking_status = status["speaking"].copy()
-                    speaking_status["audio_base64"] = base64.b64encode(audio_bytes).decode("utf-8")
+                    speaking_status["audio_base64"] = base64.b64encode(llm_resposne['audio_bytes']).decode("utf-8")
                     await ws.send_bytes(json.dumps(speaking_status))
                     # await ws.send_text(json.dumps(speaking_status))
                   
