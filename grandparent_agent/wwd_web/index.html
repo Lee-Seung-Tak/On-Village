@@ -130,10 +130,10 @@
                 navigator.mediaDevices.getUserMedia({
                     audio: {
                         sampleRate: 16000,
-                        /*channelCount: 1,
+                        channelCount: 1,
                         echoCancellation: false,
                         noiseSuppression: false,
-                        autoGainControl: false*/
+                        autoGainControl: false
                     }
                 }).then(stream => {
                     // 초기 1초 음성 버퍼 버리기
