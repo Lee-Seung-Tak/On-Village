@@ -1,5 +1,5 @@
 import chromadb
-from langchain.vectorstores import Chroma
+from langchain_chroma import Chroma   
 
 # ChromaDB 클라이언트 연결
 client = chromadb.HttpClient(host="chroma", port=8000)
@@ -21,49 +21,69 @@ prompts = [
 ]
 
 
-import boto3, json
+# import boto3, json
 
-# Bedrock runtime client
-bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
-model_id = "amazon.titan-embed-text-v2:0"
+# # Bedrock runtime client
+# bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+# model_id = "amazon.titan-embed-text-v2:0"
 
 
 
-def titan_embed(text: str):
-    body = json.dumps({"inputText": text})
-    response = bedrock.invoke_model(modelId=model_id, body=body)
-    model_response = json.loads(response["body"].read())
-    return model_response["embedding"]  # 1024차원 리스트 반환
+# def titan_embed(text: str):
+#     body = json.dumps({"inputText": text})
+#     response = bedrock.invoke_model(modelId=model_id, body=body)
+#     model_response = json.loads(response["body"].read())
+#     return model_response["embedding"]  # 1024차원 리스트 반환
 
-def insert_chromadb():
-    client.delete_collection("prompt_collection")
 
-    # Titan 임베딩(1024차원)에 맞는 새 컬렉션 생성
-    collection = client.create_collection(
-        name="prompt_collection",
-        metadata={"hnsw:space": "cosine"}  # 보통 cosine distance 사용
-    )
+# from langchain.embeddings.base import Embeddings
+
+# class TitanEmbeddings(Embeddings):
+#     def embed_documents(self, texts):
+#         return [titan_embed(t) for t in texts]
+
+#     def embed_query(self, text):
+#         return titan_embed(text)
     
-    ids = [f"doc_{i}" for i in range(len(prompts))]
-    documents = [p["sample_prompt"] for p in prompts]
-    metadatas = [
-        {
-            "intent": p["intent"], 
-            "description": p["description"], 
-            "response_type": p["response_type"],
-            "examples": ", ".join(p["examples"])
-        } for p in prompts
-    ]
+# from langchain.embeddings.base import Embeddings
 
-    # Titan 임베딩 직접 생성
-    embeddings = [titan_embed(doc) for doc in documents]
+# class TitanEmbeddings(Embeddings):
+#     def embed_documents(self, texts):
+#         return [titan_embed(t) for t in texts]
 
-    # ChromaDB에 Titan 임베딩과 함께 저장
-    collection.add(
-        documents=documents,
-        embeddings=embeddings,
-        metadatas=metadatas,
-        ids=ids
-    )
+#     def embed_query(self, text):
+#         return titan_embed(text)
+    
+# def insert_chromadb():
+#     try:
+#         client.delete_collection("prompt_collection")
+#     except Exception:
+#         pass  # 없으면 무시
 
-    print(f"{len(prompts)}개의 문서가 Titan 임베딩으로 성공적으로 벡터 DB에 추가되었습니다.")
+#     #  Embeddings 클래스 객체 사용
+#     titan_embeddings = TitanEmbeddings()
+
+#     vectorstore = Chroma(
+#         client=client,
+#         collection_name="prompt_collection",
+#         embedding_function=titan_embeddings  
+#     )
+    
+#     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+#     vectorstore.add_texts(
+#         texts=[p["sample_prompt"] for p in prompts],
+#         metadatas=[{
+#             "intent": p["intent"],
+#             "description": p["description"],
+#             "response_type": p["response_type"],
+#             "examples": ", ".join(p["examples"])
+#         } for p in prompts],
+#         ids=[f"doc_{i}" for i in range(len(prompts))]
+#     )
+    
+#     #  테스트 검색
+#     query = "자기소개 해줘"
+#     results = vectorstore.similarity_search(query, k=1)
+#     print("검색 결과:", results[0].page_content, flush=True)  
+

@@ -39,26 +39,24 @@ class AWSEmbeddings(Embeddings):
 aws_embeddings = AWSEmbeddings()
 
 from langchain.prompts import ChatPromptTemplate
-
-def init_rag_system( top_k=3 ):
+from .embedding import TitanEmbeddings
+def init_rag_system(top_k=3):
     """
     1) Chroma 컬렉션 초기화
     2) retriever 생성
     3) ChatPromptTemplate 생성
     """
-    # 컬렉션 재생성 (삭제 후)
-    try:
-        client.delete_collection("prompt_collection")
-    except Exception:
-        pass  # 컬렉션이 없으면 그냥 넘어감
-
+    # Chroma 컬렉션 가져오기 (없으면 생성)
     collection = client.get_or_create_collection(name="prompt_collection")
+    
+    # Embeddings 객체 사용
+    titan_embeddings = TitanEmbeddings()
 
     # Vectorstore + Retriever
     vectorstore = Chroma(
         client=client,
         collection_name="prompt_collection",
-        embedding_function=aws_embeddings
+        embedding_function=titan_embeddings
     )
     retriever = vectorstore.as_retriever(search_kwargs={"k": top_k})
 

@@ -41,7 +41,8 @@ async def rag_to_speech(user_input: str, voice_id="Seoyeon", engine="neural"):
     chain = prompt_template | grandparent_agent | output_parser
     
     response_text = chain.invoke({"question": user_input, "context": context})
-    audio_bytes   = await text_to_speech_aws_polly( user_input )
+    print("response_text : ", response_text ,flush=True)
+    audio_bytes   = await text_to_speech_aws_polly( response_text )
 
 
     # 텍스트 + 오디오 반환
