@@ -61,83 +61,206 @@ async def websocket_endpoint(ws: WebSocket):
     buffer            = bytearray()
     user_input_buffer = bytearray()
  
-    IGNORE_INITIAL_BUFFERS = 5
-    ignored_count = 0
     try:
         while True:
-            
-            data        = await ws.receive_bytes()
-            buffer.extend(data)
-            print(len(buffer), flush=True)
-            print("RECORD_BYTES : ", RECORD_BYTES , flush=True)
-           
-            while len(buffer) >= RECORD_BYTES:
+            message = await ws.receive()
+                        # 1) 텍스트(JSON) 메시지 처리
+            if "text" in message:
+                try:
+                    payload = json.loads(message["text"])
+                except Exception:
+                    continue
 
-                window_bytes = buffer[:RECORD_BYTES]
-                buffer       = buffer[SLIDING_STEP_BYTES:]
-                detected, confidence = wwd_is_detected(window_bytes)
-                
-                # WWD 감지가 된 경우
-                if detected:  # 웨이크워드 감지
-                    
+                if payload.get("event") == "press_to_push":
+                    # 눌러서 말하기 시작
                     await ws.send_text(json.dumps(status['listening']))
-                    print(f"[Detected] Talk ===> confidence_{confidence} ",flush=True)
+                    print("[Push-to-Talk] 음성 입력 시작", flush=True)
+
+                    user_input_buffer = bytearray()
                     silence_count = 0
-                   
-                    # 감지가 된 이후 사용자 음성 데이터 bytearr에 extend
                     stop_sig = 0
-                    
+
+                    # 2) 음성 데이터 수집 루프
                     while True:
-                      
-                        data = await ws.receive_bytes()
-             
-                        user_input_buffer.extend(data)
-                     
-                        # 최신 frame만 VAD 체크
-                   
-                        if len( user_input_buffer ) >= frame_size:
-                            
-                            frame = user_input_buffer[ -frame_size: ]
-                            
-                            if not vad.is_speech( bytes( frame ), SAMPLE_RATE ):
-                                silence_count += 1
-                                
-                            else:
-                                silence_count = 0
-                                stop_sig      += 1
+                        audio_msg = await ws.receive()
+
+                        if "bytes" in audio_msg:
+                            data = audio_msg["bytes"]
+                            user_input_buffer.extend(data)
+
+                            if len(user_input_buffer) >= frame_size:
+                                frame = user_input_buffer[-frame_size:]
+                                if not vad.is_speech(bytes(frame), SAMPLE_RATE):
+                                    silence_count += 1
+                                else:
+                                    silence_count = 0
+                                    stop_sig += 1
+
+                            if silence_count >= MAX_SILENCE_COUNT or stop_sig > MAX_SILENCE_COUNT:
+                                break
+
+                    # 3) 수집된 음성 처리
+                    await ws.send_text(json.dumps(status['thinking']))
+                    user_audio_path = await pcm_to_wav(user_input_buffer, SAMPLE_WIDTH, SAMPLE_RATE)
+                    stt_data = await transcribe_wav_to_text(user_audio_path)
+
+                    print("user_audio_path:", user_audio_path, flush=True)
+                    print("stt_data:", stt_data, flush=True)
+
+                    # LLM + TTS
+                    llm_response = await rag_to_speech(stt_data)
+
+                    speaking_status = status["speaking"].copy()
+                    speaking_status["audio_base64"] = base64.b64encode(llm_response['audio_bytes']).decode("utf-8")
+
+                    await ws.send_text(json.dumps(speaking_status))
+
+                    user_input_buffer = bytearray()
+            
+            
+            elif "bytes" in message:
+                data = message["bytes"]
+                buffer.extend(data)
+
+                while len(buffer) >= RECORD_BYTES:
+                    window_bytes = buffer[:RECORD_BYTES]
+                    buffer = buffer[SLIDING_STEP_BYTES:]
+                    detected, confidence = wwd_is_detected(window_bytes)
+
+                    if detected:
+                        await ws.send_text(json.dumps(status['listening']))
+                        print(f"[Detected] Talk ===> confidence_{confidence} ",flush=True)
+                        silence_count = 0
                     
-                        if silence_count >= MAX_SILENCE_COUNT:
-                            break
+                        # 감지가 된 이후 사용자 음성 데이터 bytearr에 extend
+                        stop_sig = 0
                         
-                        if stop_sig > MAX_SILENCE_COUNT :
-                            break
+                        while True:
+                        
+                            data = await ws.receive_bytes()
+                
+                            user_input_buffer.extend(data)
+                        
+                            # 최신 frame만 VAD 체크
+                    
+                            if len( user_input_buffer ) >= frame_size:
+                                
+                                frame = user_input_buffer[ -frame_size: ]
+                                
+                                if not vad.is_speech( bytes( frame ), SAMPLE_RATE ):
+                                    silence_count += 1
+                                    
+                                else:
+                                    silence_count = 0
+                                    stop_sig      += 1
+                        
+                            if silence_count >= MAX_SILENCE_COUNT:
+                                break
+                            
+                            if stop_sig > MAX_SILENCE_COUNT :
+                                break
+            
+                            
+                        # 전체 데이터를 그대로 WAV로 저장
+                    
+                        await ws.send_text(json.dumps(status['thinking']))
+                        user_audio_path   = await pcm_to_wav(user_input_buffer, SAMPLE_WIDTH, SAMPLE_RATE)
+                        stt_data          = await transcribe_wav_to_text(user_audio_path)
+                        
+                        print("user_audio_path : ", user_audio_path ,flush=True)
+                        print("stt_data : ", stt_data ,flush=True)
+                        
+                        # llm_resposne = llm_generate(stt_data)
+                        llm_resposne = await rag_to_speech(stt_data)
+                    
+                        
+                        speaking_status = status["speaking"].copy()
+                        speaking_status["audio_base64"] = base64.b64encode(llm_resposne['audio_bytes']).decode("utf-8")
+                        await ws.send_bytes(json.dumps(speaking_status))
+                        # await ws.send_text(json.dumps(speaking_status))
+                    
+                        
+                        
+                        # buffer            = bytearray()
+                        user_input_buffer = bytearray()
+                    else:
+                        print(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})", flush=True)
+                        await ws.send_text(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})")                # WWD 감지가 된 경우
+
+            
+            
+            # data        = await ws.receive_bytes()
+            # buffer.extend(data)
+            # print(len(buffer), flush=True)
+            # print("RECORD_BYTES : ", RECORD_BYTES , flush=True)
+           
+            # while len(buffer) >= RECORD_BYTES:
+
+            #     window_bytes = buffer[:RECORD_BYTES]
+            #     buffer       = buffer[SLIDING_STEP_BYTES:]
+            #     detected, confidence = wwd_is_detected(window_bytes)
+                
+            #     # WWD 감지가 된 경우
+            #     if detected:  # 웨이크워드 감지
+                    
+            #         await ws.send_text(json.dumps(status['listening']))
+            #         print(f"[Detected] Talk ===> confidence_{confidence} ",flush=True)
+            #         silence_count = 0
+                   
+            #         # 감지가 된 이후 사용자 음성 데이터 bytearr에 extend
+            #         stop_sig = 0
+                    
+            #         while True:
+                      
+            #             data = await ws.receive_bytes()
+             
+            #             user_input_buffer.extend(data)
+                     
+            #             # 최신 frame만 VAD 체크
+                   
+            #             if len( user_input_buffer ) >= frame_size:
+                            
+            #                 frame = user_input_buffer[ -frame_size: ]
+                            
+            #                 if not vad.is_speech( bytes( frame ), SAMPLE_RATE ):
+            #                     silence_count += 1
+                                
+            #                 else:
+            #                     silence_count = 0
+            #                     stop_sig      += 1
+                    
+            #             if silence_count >= MAX_SILENCE_COUNT:
+            #                 break
+                        
+            #             if stop_sig > MAX_SILENCE_COUNT :
+            #                 break
         
                         
-                    # 전체 데이터를 그대로 WAV로 저장
+            #         # 전체 데이터를 그대로 WAV로 저장
                    
-                    await ws.send_text(json.dumps(status['thinking']))
-                    user_audio_path   = await pcm_to_wav(user_input_buffer, SAMPLE_WIDTH, SAMPLE_RATE)
-                    stt_data          = await transcribe_wav_to_text(user_audio_path)
+            #         await ws.send_text(json.dumps(status['thinking']))
+            #         user_audio_path   = await pcm_to_wav(user_input_buffer, SAMPLE_WIDTH, SAMPLE_RATE)
+            #         stt_data          = await transcribe_wav_to_text(user_audio_path)
                     
-                    print("user_audio_path : ", user_audio_path ,flush=True)
-                    print("stt_data : ", stt_data ,flush=True)
+            #         print("user_audio_path : ", user_audio_path ,flush=True)
+            #         print("stt_data : ", stt_data ,flush=True)
                     
-                    # llm_resposne = llm_generate(stt_data)
-                    llm_resposne = await rag_to_speech(stt_data)
+            #         # llm_resposne = llm_generate(stt_data)
+            #         llm_resposne = await rag_to_speech(stt_data)
                    
                     
-                    speaking_status = status["speaking"].copy()
-                    speaking_status["audio_base64"] = base64.b64encode(llm_resposne['audio_bytes']).decode("utf-8")
-                    await ws.send_bytes(json.dumps(speaking_status))
-                    # await ws.send_text(json.dumps(speaking_status))
+            #         speaking_status = status["speaking"].copy()
+            #         speaking_status["audio_base64"] = base64.b64encode(llm_resposne['audio_bytes']).decode("utf-8")
+            #         await ws.send_bytes(json.dumps(speaking_status))
+            #         # await ws.send_text(json.dumps(speaking_status))
                   
                     
                     
-                    # buffer            = bytearray()
-                    user_input_buffer = bytearray()
-                else:
-                    print(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})", flush=True)
-                    await ws.send_text(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})")
+            #         # buffer            = bytearray()
+            #         user_input_buffer = bytearray()
+            #     else:
+            #         print(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})", flush=True)
+            #         await ws.send_text(f"웨이크워드 미감지 (신뢰도: {confidence:.4f})")
                     
             
 
