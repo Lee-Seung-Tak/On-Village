@@ -98,6 +98,13 @@
     </div>
 
     <div class="section">
+        <h2>눌러서 말하기</h2>
+        <div>
+            <button id="pushToTalkBtn">눌러서 말하기</button>
+        </div>
+    </div>
+
+    <div class="section">
         <h2>WebSocket 로그</h2>
         <div id="logBox"></div>
     </div>
@@ -108,7 +115,9 @@
         let micProcessor;
         let micInput;
         let currentStatus = 0; // 0: idle, 1: listening, 2: thinking, 3: speaking
-        let isSpeaking = false; // speaking 상태 플래그
+        let isSpeaking = false; 
+        let isPushToTalk = false;
+        let pushStream = null;
 
         function appendLog(message, type = 'info') {
             const logBox = document.getElementById('logBox');
@@ -136,7 +145,6 @@
                         autoGainControl: false
                     }
                 }).then(stream => {
-                    // 초기 1초 음성 버퍼 버리기
                     discardInitialAudio(stream, 1).then(() => {
                         appendLog("초기 음성 버퍼 무시 완료, 음성 전송 시작", "info");
 
@@ -161,7 +169,6 @@
                 .catch(err => appendLog("마이크 접근 실패: " + err, "error"));
             };
 
-            // discardInitialAudio 함수 정의
             function discardInitialAudio(stream, durationSec = 1) {
                 return new Promise((resolve) => {
                     const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
@@ -184,7 +191,6 @@
                 });
             }
 
-
             micWs.onmessage = async (msg) => {
                 try {
                     let data;
@@ -198,18 +204,18 @@
                     if (data.code !== undefined) currentStatus = data.code;
 
                     switch(currentStatus) {
-                        case 0: // idle
+                        case 0:
                             appendLog("상태: idle, 마이크 전송 재개", "info");
                             break;
-                        case 1: // listening
+                        case 1:
                             appendLog("상태: listening, 마이크 입력 수집 중", "info");
                             break;
-                        case 2: // thinking
+                        case 2:
                             appendLog("상태: thinking, 마이크 전송 중지", "info");
                             break;
-                        case 3: // speaking
+                        case 3:
                             appendLog("상태: speaking, 음성 재생", "info");
-                            isSpeaking = true; // speaking 시작
+                            isSpeaking = true;
                             if (data.audio_base64) {
                                 const audioData = Uint8Array.from(atob(data.audio_base64), c => c.charCodeAt(0));
                                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -220,8 +226,8 @@
 
                                 source.onended = () => {
                                     appendLog("음성 재생 완료, 마이크 전송 재개", "info");
-                                    isSpeaking = false;     // speaking 종료
-                                    currentStatus = 0;      // 상태 idle로 변경
+                                    isSpeaking = false;
+                                    currentStatus = 0;
                                 };
 
                                 source.start();
@@ -253,7 +259,59 @@
             }
             return int16Array;
         }
-    </script>
 
+        // -----------------------------
+        // 눌러서 말하기 기능
+        // -----------------------------
+        const pushBtn = document.getElementById("pushToTalkBtn");
+        pushBtn.addEventListener("mousedown", startPushToTalk);
+        pushBtn.addEventListener("mouseup", stopPushToTalk);
+
+        function startPushToTalk() {
+            if (!micWs || micWs.readyState !== WebSocket.OPEN) {
+                appendLog("WebSocket 연결이 필요합니다.", "error");
+                return;
+            }
+
+            micWs.send(JSON.stringify({ event: "press_to_push" }));
+            appendLog("눌러서 말하기 시작 (press_to_push 전송)", "info");
+
+            navigator.mediaDevices.getUserMedia({
+                audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            }).then(stream => {
+                pushStream = stream;
+                micAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                micInput = micAudioContext.createMediaStreamSource(stream);
+                micProcessor = micAudioContext.createScriptProcessor(4096, 1, 1);
+
+                micInput.connect(micProcessor);
+                micProcessor.connect(micAudioContext.destination);
+
+                micProcessor.onaudioprocess = (e) => {
+                    if (micWs && micWs.readyState === WebSocket.OPEN) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const int16Data = float32ToInt16(inputData);
+                        micWs.send(int16Data.buffer);
+                    }
+                };
+
+                isPushToTalk = true;
+            }).catch(err => appendLog("마이크 접근 실패: " + err, "error"));
+        }
+
+        function stopPushToTalk() {
+            if (!isPushToTalk) return;
+
+            if (micProcessor) { micProcessor.disconnect(); micProcessor = null; }
+            if (micInput) { micInput.disconnect(); micInput = null; }
+            if (micAudioContext) { micAudioContext.close(); micAudioContext = null; }
+            if (pushStream) { 
+                pushStream.getTracks().forEach(track => track.stop());
+                pushStream = null;
+            }
+            isPushToTalk = false;
+            appendLog("눌러서 말하기 종료", "info");
+        }
+    </script>
 </body>
 </html>
