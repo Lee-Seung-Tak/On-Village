@@ -1,9 +1,18 @@
 import boto3, json
 from langchain.embeddings.base import Embeddings
+from langchain.vectorstores import Chroma
 from .prompts import prompts
 # Bedrock runtime client
 bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 model_id = "amazon.titan-embed-text-v2:0"
+
+import chromadb
+from langchain.vectorstores import Chroma
+
+# ChromaDB 클라이언트 연결
+client = chromadb.HttpClient(host="chroma", port=8000)
+# 'prompt_collection' 컬렉션 생성 또는 가져오기
+collection = client.get_or_create_collection(name="prompt_collection")
 
 
 
