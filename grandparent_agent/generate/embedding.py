@@ -60,6 +60,6 @@ def insert_chromadb():
     
     #  테스트 검색
     query = "자기소개 해줘"
-    results = vectorstore.similarity_search(query, k=1)
-    print("검색 결과:", results[0].page_content, flush=True)  
+    results = vectorstore.similarity_search(query, k=3)
+    print("검색 결과:", results, flush=True)  
 
