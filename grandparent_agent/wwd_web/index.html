@@ -156,13 +156,12 @@
                         micProcessor.connect(micAudioContext.destination);
 
                         micProcessor.onaudioprocess = (e) => {
-                            if (!isSpeaking && currentStatus !== 2) {
-                                const inputData = e.inputBuffer.getChannelData(0);
-                                const int16Data = float32ToInt16(inputData);
-                                if (micWs.readyState === WebSocket.OPEN) {
-                                    micWs.send(int16Data.buffer);
-                                }
-                            }
+                            if (!micWs || micWs.readyState !== WebSocket.OPEN) return;
+                            if (isSpeaking || currentStatus === 2) return; // speaking 또는 thinking이면 전송 중단
+
+                            const inputData = e.inputBuffer.getChannelData(0);
+                            const int16Data = float32ToInt16(inputData);
+                            micWs.send(int16Data.buffer);
                         };
                     });
                 })
@@ -227,7 +226,7 @@
                                 source.onended = () => {
                                     appendLog("음성 재생 완료, 마이크 전송 재개", "info");
                                     isSpeaking = false;
-                                    currentStatus = 0;
+                                    // currentStatus = 0;  // 서버에서 코드 0을 따로 줄 경우 필요 없음
                                 };
 
                                 source.start();
@@ -288,6 +287,8 @@
                 micProcessor.connect(micAudioContext.destination);
 
                 micProcessor.onaudioprocess = (e) => {
+                    if (isSpeaking || currentStatus === 2) return; // 재생 중이거나 thinking이면 무시
+
                     if (micWs && micWs.readyState === WebSocket.OPEN) {
                         const inputData = e.inputBuffer.getChannelData(0);
                         const int16Data = float32ToInt16(inputData);
@@ -313,5 +314,6 @@
             appendLog("눌러서 말하기 종료", "info");
         }
     </script>
+
 </body>
 </html>
