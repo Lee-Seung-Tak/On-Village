@@ -136,6 +136,28 @@
 
             micWs.onopen = () => {
                 appendLog("WebSocket 연결 성공.", "info");
+
+                // 1초마다 위치 전송
+                setInterval(() => {
+                    if (!("geolocation" in navigator)) return;
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            appendLog(`사용자 위치 수집 완료 - 위도: ${lat}, 경도: ${lon}`, "success");
+
+                            if (micWs && micWs.readyState === WebSocket.OPEN) {
+                                const payload = { event: "location", lat: lat, lon: lon };
+                                micWs.send(JSON.stringify(payload));
+                                appendLog("서버로 위치 전송: " + JSON.stringify(payload), "info");
+                            }
+                        },
+                        (error) => {
+                            appendLog("위치 정보를 가져오지 못했습니다: " + error.message, "error");
+                        }
+                    );
+                }, 1000); // 1초 간격
+
                 navigator.mediaDevices.getUserMedia({
                     audio: {
                         sampleRate: 16000,
@@ -157,11 +179,11 @@
 
                         micProcessor.onaudioprocess = (e) => {
                             if (!micWs || micWs.readyState !== WebSocket.OPEN) return;
-                            if (isSpeaking || currentStatus === 2) return; // speaking 또는 thinking이면 전송 중단
+                            if (isSpeaking || currentStatus === 2) return;
 
                             const inputData = e.inputBuffer.getChannelData(0);
-                            const int16Data = float32ToInt16(inputData);
-                            micWs.send(int16Data.buffer);
+                            const buffer = float32ToInt16Bytes(inputData);
+                            micWs.send(buffer);
                         };
                     });
                 })
@@ -173,8 +195,8 @@
                     const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                     const micInput = audioCtx.createMediaStreamSource(stream);
                     const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-
                     let elapsed = 0;
+
                     processor.onaudioprocess = (e) => {
                         elapsed += e.inputBuffer.length / audioCtx.sampleRate;
                         if (elapsed >= durationSec) {
@@ -226,7 +248,6 @@
                                 source.onended = () => {
                                     appendLog("음성 재생 완료, 마이크 전송 재개", "info");
                                     isSpeaking = false;
-                                    // currentStatus = 0;  // 서버에서 코드 0을 따로 줄 경우 필요 없음
                                 };
 
                                 source.start();
@@ -257,6 +278,18 @@
                 int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
             return int16Array;
+   
+        }
+
+        function float32ToInt16Bytes(float32Array) {
+            const buffer = new ArrayBuffer(float32Array.length * 2);
+            const view = new DataView(buffer);
+            for (let i = 0; i < float32Array.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+                let val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                view.setInt16(i * 2, val, true); // true로 리틀 엔디안 지정
+            }
+            return buffer;
         }
 
         // -----------------------------
@@ -271,11 +304,11 @@
                 appendLog("WebSocket 연결이 필요합니다.", "error");
                 return;
             }
-
+            
             micWs.send(JSON.stringify({ event: "press_to_push" }));
             appendLog("눌러서 말하기 시작 (press_to_push 전송)", "info");
-
-            navigator.mediaDevices.getUserMedia({
+    
+            /*navigator.mediaDevices.getUserMedia({
                 audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
             }).then(stream => {
                 pushStream = stream;
@@ -287,17 +320,17 @@
                 micProcessor.connect(micAudioContext.destination);
 
                 micProcessor.onaudioprocess = (e) => {
-                    if (isSpeaking || currentStatus === 2) return; // 재생 중이거나 thinking이면 무시
+                    if (isSpeaking || currentStatus === 2) return;
 
                     if (micWs && micWs.readyState === WebSocket.OPEN) {
                         const inputData = e.inputBuffer.getChannelData(0);
-                        const int16Data = float32ToInt16(inputData);
-                        micWs.send(int16Data.buffer);
+                        const buffer= float32ToInt16Bytes(inputData);
+                        micWs.send(buffer);
                     }
                 };
 
                 isPushToTalk = true;
-            }).catch(err => appendLog("마이크 접근 실패: " + err, "error"));
+            }).catch(err => appendLog("마이크 접근 실패: " + err, "error"));*/
         }
 
         function stopPushToTalk() {
@@ -316,4 +349,6 @@
     </script>
 
 </body>
-</html>
+</html> 
+
+
