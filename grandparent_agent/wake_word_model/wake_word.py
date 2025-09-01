@@ -124,7 +124,7 @@ def wwd_is_detected(audio_bytes):
             confidence = prob[0, 1].item()  # Probability of positive class (wake word)
 
         # print(f"웨이크워드 감지: {'감지됨' if pred == 1 else '미감지'}, 신뢰도: {confidence:.4f}")
-        # return pred == 1 and confidence > 0.9, confidence
+        #return pred == 1 and confidence > 0.7, confidence
         return pred == 1 and 0.7 <= confidence <= 0.9, confidence
     except Exception as e:
         print(f"wwd_is_detected 오류: {e}",flush=True)

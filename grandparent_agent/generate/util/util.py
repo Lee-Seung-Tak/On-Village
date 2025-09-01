@@ -35,13 +35,22 @@ model_id = "anthropic.claude-3-haiku-20240307-v1:0"
 
 
 model_kwargs = {
-    "max_tokens": 512,
+    "max_tokens": 5000,
     "temperature": 0.5,
     "top_k": 250,
     "top_p": 1,
     "stop_sequences": ["\n\nHuman"]
 }
 
+from langchain.tools import Tool
+from ..llm_tools import llm_weather_tool
+weather_tool = Tool(
+    name="weather_tool",
+    func=llm_weather_tool,  # 실제 날씨 조회 함수
+    description="사용자의 위도와 경도를 받아 날씨 정보를 반환"
+)
+
+tools = [weather_tool]
 # LangChain's Bedrock Wrapper (ChatBedrock)
 grandparent_agent = ChatBedrock(
     client=client,
@@ -51,3 +60,12 @@ grandparent_agent = ChatBedrock(
 
 from langchain_core.output_parsers import StrOutputParser
 output_parser = StrOutputParser()
+
+from langchain.agents import initialize_agent
+
+agent = initialize_agent(
+    tools=tools,
+    llm=grandparent_agent,  # ChatBedrock
+    agent="zero-shot-react-description",
+    verbose=True
+)

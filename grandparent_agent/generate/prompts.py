@@ -35,7 +35,7 @@ prompts = [
         "examples": ["오늘 날씨 어때","서울 날씨 어때" ,"의정부 날씨 어때"],
         "response_type": "tool_call",
         "tool_name": "weather_tool",  
-        "sample_prompt": """사용자의 지역을 기반으로 위도 경도를 다음과 같은 형식으로 리턴합니다. EX) lat=37.7555, lon=128.89"""
+        "sample_prompt": """제공된 날씨 데이터를 기반으로 날씨 정보를 답변합니다."""
     },
         
     {

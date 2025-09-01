@@ -4,7 +4,7 @@ import boto3
 import json
 from .util.util import grandparent_agent, output_parser
 from .retriever import init_rag_system
-
+from .util.util import agent
 def llm_generate( user_input: str ): 
     try:
         if not user_input :
@@ -29,30 +29,25 @@ def llm_generate( user_input: str ):
 
 from .tts import text_to_speech_aws_polly
 
-async def rag_to_speech(user_input: str, voice_id="Seoyeon", engine="neural"):
+async def rag_to_speech(user_input: str, user_information, voice_id="Seoyeon", engine="neural"):
     # RAG 시스템 초기화
     vectorstore, prompt_template, top_k, score_threshold = init_rag_system()
 
-    # 유저 입력 기본값 처리
-    if not user_input:
-        user_input = "사용자가 아무말도 안했습니다. 말을 걸어보세요."
-
-    # similarity_search_with_score로 직접 필터링
+    # similarity_search_with_score로 문서 필터링
     results = vectorstore.similarity_search_with_score(user_input, k=top_k)
     docs = [doc for doc, score in results if score >= score_threshold]
-    # context 생성
-    if docs:  # 문서가 있을 때만 context 활용
+    input_text = ''
+    if docs:
         context = "\n\n".join([d.page_content for d in docs])
-        print("context:", context, flush=True)
-        response_text = (prompt_template | grandparent_agent | output_parser).invoke(
-            {"question": user_input, "context": context}
-        )
-    else:  # 문서가 없으면 LLM이 직접 답변
-        print("context 없음, LLM 단독 호출", flush=True)
-        response_text = grandparent_agent.invoke(user_input)
+        print("context : ", context, flush=True)
+        input_text = f"prompt : {context}, user_input : {user_input}, user_information :{user_information}"
+    else:
+        context = None
+        input_text = f"{user_input} 사용자 정보 {user_information}"
 
-    print("response_text:", response_text, flush=True)
-    
+    # Agent 실행
+    response_text = agent.run(input_text)
+
     # TTS 변환
     audio_bytes = await text_to_speech_aws_polly(response_text)
 

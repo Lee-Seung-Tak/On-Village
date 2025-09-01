@@ -31,6 +31,11 @@ status = {
     }
 }
 
+user_information = {
+    "age" : "71",
+    "name" : "도봉순",
+    "disease" : "당뇨",
+}
 # Python dict → JSON 문자열로 변환 가능
 # status_json = json.dumps(status, ensure_ascii=False, indent=4)
 app = FastAPI()
@@ -60,17 +65,26 @@ async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     buffer            = bytearray()
     user_input_buffer = bytearray()
- 
+    lat, lon          = '',''
+    
     try:
         while True:
             message = await ws.receive()
-                        # 1) 텍스트(JSON) 메시지 처리
+            # 1) 텍스트(JSON) 메시지 처리
             if "text" in message:
                 try:
                     payload = json.loads(message["text"])
                 except Exception:
                     continue
-
+                    
+                if payload.get("event") == "location":
+                    lat = payload.get("lat")
+                    lon = payload.get("lon")
+                if lat is not None and lon is not None:
+                    user_information['location'] = {"lat": lat, "lon": lon}
+                    
+                
+                    
                 if payload.get("event") == "press_to_push":
                     # 눌러서 말하기 시작
                     await ws.send_text(json.dumps(status['listening']))
@@ -83,7 +97,7 @@ async def websocket_endpoint(ws: WebSocket):
                     # 2) 음성 데이터 수집 루프
                     while True:
                         audio_msg = await ws.receive()
-
+                        
                         if "bytes" in audio_msg:
                             data = audio_msg["bytes"]
                             user_input_buffer.extend(data)
@@ -108,7 +122,7 @@ async def websocket_endpoint(ws: WebSocket):
                     print("stt_data:", stt_data, flush=True)
 
                     # LLM + TTS
-                    llm_response = await rag_to_speech(stt_data)
+                    llm_response = await rag_to_speech(stt_data, json.dumps(user_information, ensure_ascii=False))
 
                     speaking_status = status["speaking"].copy()
                     speaking_status["audio_base64"] = base64.b64encode(llm_response['audio_bytes']).decode("utf-8")
@@ -116,9 +130,10 @@ async def websocket_endpoint(ws: WebSocket):
                     await ws.send_text(json.dumps(speaking_status))
 
                     user_input_buffer = bytearray()
-            
+                    buffer            = bytearray()
             
             elif "bytes" in message:
+           
                 data = message["bytes"]
                 buffer.extend(data)
 
@@ -171,7 +186,8 @@ async def websocket_endpoint(ws: WebSocket):
                         print("stt_data : ", stt_data ,flush=True)
                         
                         # llm_resposne = llm_generate(stt_data)
-                        llm_resposne = await rag_to_speech(stt_data)
+                        llm_resposne = await rag_to_speech(stt_data, json.dumps(user_information, ensure_ascii=False))
+
                     
                         
                         speaking_status = status["speaking"].copy()
