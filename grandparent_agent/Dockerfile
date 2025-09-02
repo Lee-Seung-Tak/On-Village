@@ -12,7 +12,7 @@ RUN python -m pip install --upgrade pip
 # 의존성 설치
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-
+RUN pip install --upgrade chromadb
 # 현재 디렉토리 전체를 /app으로 복사
 COPY . .
 
