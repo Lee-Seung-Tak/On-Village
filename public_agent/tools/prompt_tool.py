@@ -1,4 +1,4 @@
-# public_agent/tools/prompt_tool.py
+# public_official_agent/tools/prompt_tool.py
 import json
 import re
 from typing import List, Dict
@@ -7,8 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain.tools import StructuredTool
 
 # 프롬프트 단계 모음 (step1=키워드추출, step2~7=필드 정제)
-from public_agent.prompts import prompt as P
-
+from public_agent import prompts as P
 
 # ====== 최종 산출 스키마 ======
 class VideoSpec(BaseModel):

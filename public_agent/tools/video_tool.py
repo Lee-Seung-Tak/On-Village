@@ -1,4 +1,4 @@
-# public_agent/tools/video_tool.py
+# public_official_agent/tools/video_tool.py
 import os
 import time
 import json
@@ -7,14 +7,14 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai.types import GenerateVideosConfig
 from google.cloud import storage
-from public_agent.prompts.prompt import build_prompt
+from public_official_agent.prompts.prompt import build_prompt
 
 load_dotenv()
 
 
 def _outputs_dir() -> str:
     """outputs 디렉토리 보장"""
-    base = os.path.dirname(os.path.dirname(__file__))  # /public_agent
+    base = os.path.dirname(os.path.dirname(__file__))  # /public_official_agent
     out = os.path.join(base, "outputs")
     os.makedirs(out, exist_ok=True)
     return out
@@ -85,7 +85,7 @@ def generate_video(
         if cred:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred
 
-        # ✅ 카툰+사람 강제 보정 (툴 레벨에서 항상 보장)
+        # 카툰+사람 강제 보정 (툴 레벨에서 항상 보장)
         style, negative_prompt, composition = _enforce_cartoon_human(
             style, negative_prompt, composition
         )

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>기쁨이 챗봇</title>
+</head>
+<body>
+  <h1>기쁨이 챗봇</h1>
+
+  <input type="text" id="userInput" placeholder="메시지를 입력하세요" />
+  <button onclick="sendMessage()">보내기</button>
+
+  <!-- 대화 로그 -->
+  <div id="response" style="margin-top:20px; font-weight:bold;">
+    <b>기쁨이:</b> 안녕하세요! 저는 AI 어시스턴트 <b>기쁨이</b> 입니다 😊<br/>
+    보성군 지역축제 영상 제작을 원하시나요, 아니면 일반 대화/다른 업무를 원하시나요?
+  </div>
+
+  <script>
+    async function sendMessage() {
+      const userInput = document.getElementById("userInput").value;
+      if (!userInput.trim()) return;
+
+      // 서버 요청
+      const res = await fetch(`/chat?user_input=${encodeURIComponent(userInput)}`);
+      const data = await res.json();
+
+      // 대화 로그 추가
+      const resBox = document.getElementById("response");
+      resBox.innerHTML += `<br/><br/><b>나:</b> ${userInput}<br/><b>기쁨이:</b> ${data.response || data.error}`;
+
+      // 입력창 초기화
+      document.getElementById("userInput").value = "";
+    }
+
+    // Enter 키로도 전송 가능하게
+    document.getElementById("userInput").addEventListener("keypress", function (e) {
+      if (e.key === "Enter") {
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>

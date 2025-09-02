@@ -1,4 +1,4 @@
-# public_agent/tools/festival_idea_tool.py
+# public_official_agent/tools/festival_idea_tool.py
 # -*- coding: utf-8 -*-
 import json, os, logging
 from typing import List, Optional
@@ -72,9 +72,9 @@ def llm_extract_ideas(context_chunks: List[str], k: int, model: str = "gpt-4.1-n
     logger.info(f"Sending to LLM: chunks={len(context_chunks)}, total_chars={len(context)} k={k} model={model}")
 
     sys_prompt = (
-        "너는 로컬 축제 기획 보조 분석가다. 아래는 지역 어르신들의 실제 대화 발화다. "
+        "너는 보성군 축제 기획 보조 분석가다. 아래는 지역 어르신들의 실제 대화 발화다. "
         f"이 데이터를 근거로 지역 축제/관광 프로모션에 바로 적용 가능한 구체적 프로그램 아이디어를 정확히 {k}개 도출하라. "
-        "한국 로컬 맥락, 어르신 언급 빈도, 접근성/편의, 실행 가능성을 고려하라. 반드시 JSON만 출력하라."
+        "보성군 지역 축제에 관련해서 추출하라. 반드시 JSON만 출력하라."
     )
     user_prompt = f"""[대화 컨텍스트]
 {context}
@@ -86,7 +86,7 @@ def llm_extract_ideas(context_chunks: List[str], k: int, model: str = "gpt-4.1-n
     {{
       "title": "간결한 아이디어 명",
       "reason": "어르신 대화에서 이 아이디어가 유효한 근거 1문장",
-      "keywords": ["핵심 키워드", "2~5개"],
+      "keywords": ["보성군 관련 핵심 키워드", "2~5개"],
       "seed": "후속 비디오 스펙 생성에 쓸 한 문장 시드(간결)",
       "evidence": ["짧은 근거 문장 1", "짧은 근거 문장 2"]
     }}
@@ -111,7 +111,7 @@ JSON 외 텍스트 금지.
 
 # -------------- 툴 엔트리 --------------
 class FestivalIdeaArgs(BaseModel):
-    path: str = Field(default="public_agent/conversation.json", description="대화 JSON 파일 경로")
+    path: str = Field(default="public_official_agent/conversation.json", description="대화 JSON 파일 경로")
     k: int = Field(default=2, ge=1, le=5, description="추천 아이디어 개수")
     speaker: Optional[str] = Field(default="어르신", description="필터링 화자(None이면 전체)")
     chunk_size: int = Field(default=1200, description="청킹 문자 수")
@@ -150,7 +150,7 @@ festival_idea_tool = StructuredTool.from_function(
     func=festival_idea_entry,
     name="festival_idea_tool",
     description=(
-        "public_agent/conversation.json을 읽고 텍스트를 청킹한 뒤, 지역 어르신 대화에서 로컬 축제 아이디어 k개를 JSON으로 반환한다."
+        "public_agent/conversation.json을 읽고 텍스트를 청킹한 뒤, 지역 어르신 대화에서 보성군 전용 축제 아이디어 k개를 JSON으로 반환한다."
     ),
     args_schema=FestivalIdeaArgs,
 )
